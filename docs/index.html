@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Optional: set to your full repo URL, e.g. https://github.com/you/SentinelForge -->
+    <meta name="github-repo" content="" />
+    <meta
+      name="description"
+      content="SentinelForge — cyber training, hands-on labs, hiring, and org billing."
+    />
+    <title>SentinelForge</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header>
+      <nav class="nav" aria-label="Primary">
+        <a class="brand" href="./">SentinelForge</a>
+        <div class="nav-links">
+          <a href="#features">Features</a>
+          <a href="#hosting">Run the app</a>
+          <a href="#" data-repo-link rel="noopener noreferrer">Repository</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="main">
+      <div class="hero">
+        <span class="hero-badge">Cyber training platform</span>
+        <h1>Train defenders. Place talent. Bill orgs.</h1>
+        <p class="lead">
+          SentinelForge is an open-source platform for hands-on security labs, live training sessions,
+          hiring workflows, Slack integrations, and Stripe-backed organization billing.
+        </p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#" data-repo-link rel="noopener noreferrer">View on GitHub</a>
+          <a class="btn btn-secondary" href="#hosting">Self-host with Docker</a>
+        </div>
+      </div>
+
+      <section id="features" aria-labelledby="features-heading">
+        <h2 id="features-heading">What you get</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>Hands-on labs</h3>
+            <p>Scenario browser, training sessions, and Socket.IO-powered live environments.</p>
+          </div>
+          <div class="card">
+            <h3>Workforce</h3>
+            <p>Jobs, applications, placement matching, and progress tracking.</p>
+          </div>
+          <div class="card">
+            <h3>Enterprise</h3>
+            <p>Admin metrics, org management, and Stripe checkout and customer portal.</p>
+          </div>
+          <div class="card">
+            <h3>Integrations</h3>
+            <p>Slack OAuth and events, optional Google sign-in, Gemini-powered mentor.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="hosting" aria-labelledby="hosting-heading">
+        <h2 id="hosting-heading">About this site</h2>
+        <p class="note">
+          <strong>This page is static</strong> (hosted on GitHub Pages). The full SentinelForge product
+          runs as a Node.js server with PostgreSQL, Redis, and WebSockets — deploy it with Docker on a
+          VM or container host. See the repository README for <code>docker-compose.prod.yml</code> and
+          environment setup.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        SentinelForge ·
+        <a href="https://pages.github.com/" rel="noopener noreferrer">GitHub Pages</a>
+      </p>
+    </footer>
+
+    <script>
+      (function () {
+        var meta = document.querySelector('meta[name="github-repo"]');
+        var manual = meta && meta.getAttribute("content");
+        manual = manual && manual.trim();
+        var repo = manual && manual.indexOf("http") === 0 ? manual.replace(/\/$/, "") : null;
+        if (!repo) {
+          var h = location.hostname;
+          var segs = location.pathname.replace(/\/$/, "").split("/").filter(Boolean);
+          if (h.endsWith(".github.io")) {
+            var owner = h.replace(".github.io", "");
+            if (segs.length) {
+              repo = "https://github.com/" + owner + "/" + segs[0];
+            } else {
+              repo = "https://github.com/" + owner + "/" + owner + ".github.io";
+            }
+          }
+        }
+        if (!repo) {
+          repo = "https://github.com";
+        }
+        document.querySelectorAll("[data-repo-link]").forEach(function (el) {
+          el.setAttribute("href", repo);
+        });
+      })();
+    </script>
+  </body>
+</html>
