@@ -28,6 +28,8 @@ else
 fi
 
 echo "==> Building and starting (docker-compose.prod.yml)"
+export HTTP_PORT="${HTTP_PORT:-80}"
+export HTTPS_PORT="${HTTPS_PORT:-443}"
 "${DC[@]}" -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
 echo "==> Status"
@@ -35,6 +37,6 @@ echo "==> Status"
 
 HTTP_PORT="${HTTP_PORT:-80}"
 echo ""
-echo "If port 80 is busy, set HTTP_PORT=8088 and re-run this script."
+echo "Using HTTP_PORT=${HTTP_PORT} (set HTTP_PORT=8088 if port 80 is busy)."
 echo "App (via nginx): http://localhost:${HTTP_PORT}/"
 echo "Health:          http://localhost:${HTTP_PORT}/api/health"

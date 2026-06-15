@@ -10,6 +10,8 @@ A **static** landing page lives in **`docs/`** and deploys via **GitHub Actions*
 
 See **[docs/DEPLOY_CLI.md](docs/DEPLOY_CLI.md)** — Docker Compose on your machine, **Render** blueprint (`render.yaml` + `render blueprints validate`), or **Fly.io** when your org has machine quota.
 
+**Ordered checklist:** [docs/NEXT_STEPS.md](docs/NEXT_STEPS.md).
+
 ## Prerequisites
 
 - **Node.js** 18.18+ (20+ recommended for local development)
