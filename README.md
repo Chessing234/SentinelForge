@@ -6,6 +6,10 @@ SentinelForge is a cyber training and workforce platform built with **Next.js 15
 
 A **static** landing page lives in **`docs/`** and deploys via **GitHub Actions** to **`https://<owner>.github.io/<repo>/`** when you enable Pages with source **GitHub Actions**. This is only marketing copy — the full app still needs Docker/your own host. Setup steps: [docs/GITHUB_PAGES.md](docs/GITHUB_PAGES.md).
 
+## Deploy the full app (CLI)
+
+See **[docs/DEPLOY_CLI.md](docs/DEPLOY_CLI.md)** — Docker Compose on your machine, **Render** blueprint (`render.yaml` + `render blueprints validate`), or **Fly.io** when your org has machine quota.
+
 ## Prerequisites
 
 - **Node.js** 18.18+ (20+ recommended for local development)

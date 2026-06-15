@@ -22,7 +22,17 @@ function has(key: string): boolean {
   return value !== undefined && value.trim() !== "";
 }
 
+/** Render sets RENDER_EXTERNAL_URL; map it to auth/public URLs if unset. */
+function applyRenderUrlDefaults(): void {
+  const base = process.env.RENDER_EXTERNAL_URL?.trim();
+  if (!base) return;
+  if (!has("NEXTAUTH_URL")) process.env.NEXTAUTH_URL = base;
+  if (!has("AUTH_URL")) process.env.AUTH_URL = base;
+  if (!has("NEXT_PUBLIC_APP_URL")) process.env.NEXT_PUBLIC_APP_URL = base;
+}
+
 export function checkEnv(): void {
+  applyRenderUrlDefaults();
   const isProd = process.env.NODE_ENV === "production";
   const errors: Issue[] = [];
   const warnings: Issue[] = [];

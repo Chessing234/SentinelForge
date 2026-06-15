@@ -1,0 +1,32 @@
+# Render Blueprint — deploy the full Docker image + managed Postgres from the dashboard:
+#   Dashboard → New → Blueprint → Connect https://github.com/Chessing234/SentinelForge
+# Or validate locally:  render blueprints validate render.yaml
+#
+# After the first deploy, open the web service URL (https://<name>.onrender.com) and confirm
+# health: GET /api/health  (AUTH_URL / NEXTAUTH_URL are inferred from RENDER_EXTERNAL_URL in code).
+
+databases:
+  - name: sentinelforge-db
+    databaseName: sentinelforge
+    user: sentinel
+    plan: free
+
+services:
+  - type: web
+    name: sentinelforge
+    runtime: docker
+    repo: https://github.com/Chessing234/SentinelForge.git
+    branch: main
+    region: oregon
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sentinelforge-db
+          property: connectionString
