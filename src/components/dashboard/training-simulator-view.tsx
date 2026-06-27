@@ -4,6 +4,7 @@ import type { ReactElement } from "react";
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { AttackTimeline } from "@/components/training/attack-timeline";
 import { HintButtonRow } from "@/components/training/hint-button";
 import { CommandInput } from "@/components/training/command-input";
 import { EnvironmentExplorer } from "@/components/training/environment-explorer";
@@ -25,17 +26,20 @@ import {
   useTrainingSession,
 } from "@/hooks/use-training-session";
 import { useTimer } from "@/hooks/use-timer";
+import type { AttackChain } from "@/lib/agents/adversary/attack-chain";
 
 const PROMPT = "sentinelforge@lab:~$";
 
 type TrainingSimulatorViewProps = {
   initial: InitialTrainingPayload;
   initialMentorMessages: MentorMessageRow[];
+  initialAttackChain?: AttackChain | null;
 };
 
 export function TrainingSimulatorView({
   initial,
   initialMentorMessages,
+  initialAttackChain = null,
 }: TrainingSimulatorViewProps): ReactElement {
   const router = useRouter();
   const training = useTrainingSession(initial);
@@ -124,6 +128,16 @@ export function TrainingSimulatorView({
     </div>
   );
 
+  const attackSection = (
+    <div className="flex min-h-[160px] flex-1 flex-col md:min-h-0">
+      <AttackTimeline
+        sessionId={initial.sessionId}
+        initialChain={initialAttackChain}
+        isActive={training.isActive && Boolean(training.trainingStartedAt)}
+      />
+    </div>
+  );
+
   const eventsSection = (
     <div className="flex min-h-[200px] flex-1 flex-col md:min-h-0">
       <EventLog events={training.events} />
@@ -163,6 +177,7 @@ export function TrainingSimulatorView({
         <TrainingMobileTabs
           terminal={terminalSection}
           network={networkSection}
+          attack={attackSection}
           events={eventsSection}
           mentor={mentorSection}
         />
@@ -171,6 +186,7 @@ export function TrainingSimulatorView({
       <div className="hidden min-h-0 flex-1 gap-3 overflow-hidden md:grid md:grid-cols-12">
         <div className="col-span-3 flex min-h-0 flex-col gap-3 overflow-hidden">
           {networkSection}
+          {attackSection}
           {eventsSection}
         </div>
         <div className="col-span-6 flex min-h-0 flex-col gap-3 overflow-hidden">

@@ -2,7 +2,7 @@ import { getToken } from "next-auth/jwt";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { recordApiRequest } from "@/lib/metrics";
+import { recordApiRequest, recordApiResponseTime } from "@/lib/metrics";
 import { checkRateLimit } from "@/lib/rate-limiter";
 
 const instructorRoles = new Set(["instructor", "admin", "enterprise_admin"]);
@@ -20,6 +20,26 @@ function applySecurityHeaders(response: NextResponse, requestId: string): NextRe
   return response;
 }
 
+function tracksApiMetrics(pathname: string): boolean {
+  return (
+    pathname.startsWith("/api/") &&
+    pathname !== "/api/health" &&
+    !pathname.startsWith("/api/billing/webhook")
+  );
+}
+
+function finish(
+  response: NextResponse,
+  requestId: string,
+  pathname: string,
+  startedAt: number,
+): NextResponse {
+  if (tracksApiMetrics(pathname)) {
+    recordApiResponseTime(Date.now() - startedAt, response.status >= 400);
+  }
+  return applySecurityHeaders(response, requestId);
+}
+
 function clientIp(request: NextRequest): string {
   return (
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
@@ -29,6 +49,7 @@ function clientIp(request: NextRequest): string {
 }
 
 export async function middleware(request: NextRequest): Promise<NextResponse> {
+  const startedAt = Date.now();
   const requestId = globalThis.crypto.randomUUID();
   const token = await getToken({
     req: request,
@@ -39,17 +60,13 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   const role = typeof token?.role === "string" ? token.role : undefined;
   const { pathname } = request.nextUrl;
 
-  if (
-    pathname.startsWith("/api/") &&
-    pathname !== "/api/health" &&
-    !pathname.startsWith("/api/billing/webhook")
-  ) {
+  if (tracksApiMetrics(pathname)) {
     recordApiRequest();
     const ip = clientIp(request);
     const preset = pathname.startsWith("/api/auth") ? "auth" : "api";
     const rl = checkRateLimit(ip, preset, pathname.slice(0, 64));
     if (!rl.ok) {
-      return applySecurityHeaders(
+      return finish(
         NextResponse.json(
           {
             success: false,
@@ -58,48 +75,55 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
           { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
         ),
         requestId,
+        pathname,
+        startedAt,
       );
     }
   }
 
   if (pathname.startsWith("/dashboard") && !isLoggedIn) {
-    return applySecurityHeaders(NextResponse.redirect(new URL("/login", request.url)), requestId);
+    return finish(NextResponse.redirect(new URL("/login", request.url)), requestId, pathname, startedAt);
   }
 
   if (pathname.startsWith("/admin")) {
     if (!isLoggedIn) {
-      return applySecurityHeaders(NextResponse.redirect(new URL("/login", request.url)), requestId);
+      return finish(NextResponse.redirect(new URL("/login", request.url)), requestId, pathname, startedAt);
     }
     const allowed = role === "admin" || role === "enterprise_admin";
     if (!allowed) {
-      return applySecurityHeaders(NextResponse.redirect(new URL("/dashboard", request.url)), requestId);
+      return finish(NextResponse.redirect(new URL("/dashboard", request.url)), requestId, pathname, startedAt);
     }
   }
 
   if (pathname.startsWith("/dashboard/admin") || pathname.startsWith("/dashboard/scenarios/builder")) {
     if (!isLoggedIn) {
-      return applySecurityHeaders(NextResponse.redirect(new URL("/login", request.url)), requestId);
+      return finish(NextResponse.redirect(new URL("/login", request.url)), requestId, pathname, startedAt);
     }
     if (role !== "admin") {
-      return applySecurityHeaders(NextResponse.redirect(new URL("/dashboard", request.url)), requestId);
+      return finish(NextResponse.redirect(new URL("/dashboard", request.url)), requestId, pathname, startedAt);
     }
   }
 
   if (pathname.startsWith("/dashboard/billing")) {
     if (!isLoggedIn) {
-      return applySecurityHeaders(NextResponse.redirect(new URL("/login", request.url)), requestId);
+      return finish(NextResponse.redirect(new URL("/login", request.url)), requestId, pathname, startedAt);
     }
     if (role !== "enterprise_admin") {
-      return applySecurityHeaders(NextResponse.redirect(new URL("/dashboard/settings", request.url)), requestId);
+      return finish(
+        NextResponse.redirect(new URL("/dashboard/settings", request.url)),
+        requestId,
+        pathname,
+        startedAt,
+      );
     }
   }
 
   if (pathname.startsWith("/dashboard/hiring")) {
     if (!isLoggedIn) {
-      return applySecurityHeaders(NextResponse.redirect(new URL("/login", request.url)), requestId);
+      return finish(NextResponse.redirect(new URL("/login", request.url)), requestId, pathname, startedAt);
     }
     if (role !== "admin" && role !== "enterprise_admin") {
-      return applySecurityHeaders(NextResponse.redirect(new URL("/dashboard", request.url)), requestId);
+      return finish(NextResponse.redirect(new URL("/dashboard", request.url)), requestId, pathname, startedAt);
     }
   }
 
@@ -108,10 +132,10 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     pathname.startsWith("/dashboard/analytics")
   ) {
     if (!isLoggedIn) {
-      return applySecurityHeaders(NextResponse.redirect(new URL("/login", request.url)), requestId);
+      return finish(NextResponse.redirect(new URL("/login", request.url)), requestId, pathname, startedAt);
     }
     if (!role || !instructorRoles.has(role)) {
-      return applySecurityHeaders(NextResponse.redirect(new URL("/dashboard", request.url)), requestId);
+      return finish(NextResponse.redirect(new URL("/dashboard", request.url)), requestId, pathname, startedAt);
     }
   }
 
@@ -125,10 +149,10 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     pathname.startsWith("/api/slack/actions") ||
     pathname.startsWith("/api/billing/webhook");
   if (pathname.startsWith("/api") && !isPublicApi && !isLoggedIn) {
-    return applySecurityHeaders(NextResponse.json({ error: "Unauthorized" }, { status: 401 }), requestId);
+    return finish(NextResponse.json({ error: "Unauthorized" }, { status: 401 }), requestId, pathname, startedAt);
   }
 
-  return applySecurityHeaders(NextResponse.next(), requestId);
+  return finish(NextResponse.next(), requestId, pathname, startedAt);
 }
 
 export const config = {

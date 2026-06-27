@@ -11,7 +11,7 @@ type ActiveSessionCardProps = {
   sessionId: number;
   scenarioName: string;
   startedAt: Date | null;
-  /** 0–100 progress estimate (e.g. from score or static until simulator exists). */
+  /** 0–100 progress estimate (e.g. from score or flags found). */
   progressPct: number;
 };
 

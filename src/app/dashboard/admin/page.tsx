@@ -117,7 +117,7 @@ export default async function DashboardAdminPage({
               ${(metrics.mrrCents / 100).toLocaleString()}
             </p>
             <p className="mt-2 text-xs text-slate-500">
-              Active paid orgs: {metrics.activeSubscriptions} · Churn (placeholder):{" "}
+              Active paid orgs: {metrics.activeSubscriptions} · Suspended (churn signal):{" "}
               {metrics.churnRatePercent}%
             </p>
           </div>
@@ -192,7 +192,7 @@ export default async function DashboardAdminPage({
         <CardHeader>
           <CardTitle className="text-lg text-white">System health</CardTitle>
           <CardDescription className="text-slate-400">
-            Live-ish metrics from this Node process; wire Datadog/Grafana in production.
+            Live metrics from this Node process (middleware timing + in-memory counters).
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -201,11 +201,11 @@ export default async function DashboardAdminPage({
             <p className="text-xl font-semibold text-white">{metrics.api.requestsSinceDeploy}</p>
           </div>
           <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
-            <p className="text-xs text-slate-500">Avg response (placeholder)</p>
+            <p className="text-xs text-slate-500">Avg middleware response</p>
             <p className="text-xl font-semibold text-white">{metrics.api.avgResponseMs} ms</p>
           </div>
           <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
-            <p className="text-xs text-slate-500">Error rate (placeholder)</p>
+            <p className="text-xs text-slate-500">API error rate</p>
             <p className="text-xl font-semibold text-white">{metrics.api.errorRatePercent}%</p>
           </div>
           <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
@@ -213,11 +213,8 @@ export default async function DashboardAdminPage({
             <p className="text-xl font-semibold text-white">{metrics.realtime.websocketConnections}</p>
           </div>
           <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
-            <p className="text-xs text-slate-500">DB pool (configured max)</p>
-            <p className="text-xl font-semibold text-white">
-              {metrics.realtime.dbPool.active} active / {metrics.realtime.dbPool.idle} idle / max{" "}
-              {metrics.realtime.dbPool.max}
-            </p>
+            <p className="text-xs text-slate-500">DB pool max (configured)</p>
+            <p className="text-xl font-semibold text-white">max {metrics.realtime.dbPool.max}</p>
           </div>
         </CardContent>
       </Card>

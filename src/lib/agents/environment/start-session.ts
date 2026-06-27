@@ -35,6 +35,11 @@ export async function startEnvironmentTrainingSession(params: {
   });
 
   await adversaryAgent.planAttack(row.id, params.userId);
+  try {
+    await adversaryAgent.executeAll(row.id, params.userId);
+  } catch (err) {
+    console.error("[start-session] adversary executeAll failed:", err);
+  }
 
   return { ok: true, sessionId: row.id, overview };
 }

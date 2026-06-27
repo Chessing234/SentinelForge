@@ -1,6 +1,6 @@
 "use client";
 
-import { Shield } from "lucide-react";
+import { Shield, UserCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
@@ -10,6 +10,27 @@ import {
   type FormEvent,
   type ReactElement,
 } from "react";
+
+const DEMO_ACCOUNTS = [
+  {
+    label: "Student",
+    email: "student1@state.edu",
+    password: "password123",
+    hint: "Live lab + mentor",
+  },
+  {
+    label: "Enterprise admin",
+    email: "enterprise.admin@acme.com",
+    password: "password123",
+    hint: "Analytics + hiring",
+  },
+  {
+    label: "Platform admin",
+    email: "admin@sentinelforge.com",
+    password: "password123",
+    hint: "Org + scenario admin",
+  },
+] as const;
 
 function LoginForm(): ReactElement {
   const router = useRouter();
@@ -61,6 +82,34 @@ function LoginForm(): ReactElement {
               : error ?? "An error occurred.")}
         </div>
       )}
+
+      <div className="mb-6 rounded-lg border border-emerald-500/30 bg-emerald-950/20 p-3">
+        <div className="mb-2 flex items-center gap-2 text-xs font-medium text-emerald-300">
+          <UserCircle className="h-3.5 w-3.5" aria-hidden />
+          Demo accounts (after <code className="text-emerald-200">npm run db:seed</code>)
+        </div>
+        <ul className="space-y-2">
+          {DEMO_ACCOUNTS.map((acct) => (
+            <li key={acct.email} className="flex items-center justify-between gap-2 text-xs">
+              <div className="min-w-0">
+                <p className="font-medium text-slate-200">{acct.label}</p>
+                <p className="truncate text-slate-400">{acct.email}</p>
+                <p className="text-[10px] text-slate-500">{acct.hint}</p>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 rounded border border-emerald-600/50 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-900/40"
+                onClick={() => {
+                  setEmail(acct.email);
+                  setPassword(acct.password);
+                }}
+              >
+                Use
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
 
       <div className="flex flex-col gap-3">
         <button

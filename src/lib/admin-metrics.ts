@@ -3,7 +3,11 @@ import {
   countDistinctActiveUsersThisMonth,
   listOrganizationsForAdmin,
 } from "@/db/queries";
-import { getApiRequestCount } from "@/lib/metrics";
+import {
+  getApiRequestCount,
+  getAvgResponseMs,
+  getErrorRatePercent,
+} from "@/lib/metrics";
 import { getTrainingSocketConnectionCount } from "@/lib/training-socket-stats";
 
 function estimateMrrCents(plan: string, seats: number): number {
@@ -16,9 +20,11 @@ export async function getAdminMetricsSnapshot() {
   const orgs = await listOrganizationsForAdmin();
   let mrrCents = 0;
   let paidSubs = 0;
+  let suspendedPaid = 0;
   for (const o of orgs) {
     if (o.plan === "academic" || o.plan === "enterprise") {
       paidSubs += 1;
+      if (o.suspended) suspendedPaid += 1;
       mrrCents += estimateMrrCents(o.plan, o.seatLimit);
     }
   }
@@ -34,19 +40,22 @@ export async function getAdminMetricsSnapshot() {
     return { month: label, revenue: Math.round((mrrCents / 100) * growth) };
   });
 
+  const churnRatePercent =
+    paidSubs > 0 ? Math.round((suspendedPaid / paidSubs) * 1000) / 10 : 0;
+
   return {
     mrrCents,
     activeSubscriptions: paidSubs,
-    churnRatePercent: 2.1,
+    churnRatePercent,
     revenueByMonth: chart,
     api: {
       requestsSinceDeploy: getApiRequestCount(),
-      avgResponseMs: 42,
-      errorRatePercent: 0.3,
+      avgResponseMs: getAvgResponseMs(),
+      errorRatePercent: getErrorRatePercent(),
     },
     realtime: {
       websocketConnections: getTrainingSocketConnectionCount(),
-      dbPool: { active: 2, idle: 8, max: 10 },
+      dbPool: { active: 0, idle: 0, max: 10 },
     },
     usage: {
       sessionsCompletedThisMonth: sessionsThisMonth,

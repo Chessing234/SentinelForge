@@ -60,11 +60,13 @@ function tone(type: string): string {
 }
 
 function describe(ev: SessionEventRow): string {
+  const payload = ev.payload as Record<string, unknown> | null;
+
   switch (ev.eventType) {
     case "environment_ready":
       return "Environment provisioned";
     case "attack_started":
-      return "Attack chain initiated";
+      return "Adversary attack chain planned";
     case "attack_detected":
       return "Trainee detected a technique";
     case "flag_submitted":
@@ -79,6 +81,18 @@ function describe(ev: SessionEventRow): string {
       return "Hint delivered";
     case "session_completed":
       return "Training finished";
+    case "milestone_reached": {
+      if (payload?.adversary === "step" && typeof payload.techniqueId === "string") {
+        return `Adversary executed ${payload.techniqueId}`;
+      }
+      if (payload?.adversary === "detection_hypothesis") {
+        return `Detection hypothesis scored ${String(payload.score ?? "?")}%`;
+      }
+      if (payload?.adversary === "detection_confirmed") {
+        return "Detection confirmed by evaluator";
+      }
+      return "Training milestone reached";
+    }
     default:
       return ev.eventType.replace(/_/g, " ");
   }

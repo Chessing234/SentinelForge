@@ -1,12 +1,7 @@
+import { redirect } from "next/navigation";
 import type { ReactElement } from "react";
 
+/** Legacy admin route — platform admin lives under the dashboard. */
 export default function AdminPage(): ReactElement {
-  return (
-    <main className="space-y-4">
-      <h1 className="text-2xl font-semibold text-foreground">Administration</h1>
-      <p className="text-muted-foreground">
-        Enterprise and platform administration tools will land in later prompts.
-      </p>
-    </main>
-  );
+  redirect("/dashboard/admin");
 }

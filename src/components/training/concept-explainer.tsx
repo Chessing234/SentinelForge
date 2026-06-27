@@ -85,9 +85,61 @@ export function ConceptExplainer({
               </a>
               . Map lab findings to tactics before picking exact technique IDs.
             </p>
-            <div className="mt-2 h-24 rounded border border-dashed border-slate-700 bg-slate-950/50 p-2 text-[10px] text-slate-500">
-              Diagram placeholder: draw a simple kill-chain (access → execution → persistence → impact)
-              on paper while you read.
+            <div className="mt-2 rounded border border-slate-700 bg-slate-950/50 p-2">
+              <p className="text-[10px] font-medium text-slate-400">Cyber kill chain</p>
+              <svg
+                viewBox="0 0 320 48"
+                className="mt-1 h-12 w-full"
+                role="img"
+                aria-label="Kill chain: Initial Access, Execution, Persistence, Impact"
+              >
+                <defs>
+                  <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                    <path d="M0,0 L6,3 L0,6 Z" fill="#64748b" />
+                  </marker>
+                </defs>
+                {[
+                  { x: 8, label: "Access", color: "#f87171" },
+                  { x: 88, label: "Execution", color: "#fb923c" },
+                  { x: 168, label: "Persistence", color: "#fbbf24" },
+                  { x: 248, label: "Impact", color: "#34d399" },
+                ].map((stage, i) => (
+                  <g key={stage.label}>
+                    <rect
+                      x={stage.x}
+                      y="12"
+                      width="64"
+                      height="24"
+                      rx="4"
+                      fill={stage.color}
+                      fillOpacity="0.15"
+                      stroke={stage.color}
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={stage.x + 32}
+                      y="28"
+                      textAnchor="middle"
+                      fill={stage.color}
+                      fontSize="9"
+                      fontFamily="system-ui, sans-serif"
+                    >
+                      {stage.label}
+                    </text>
+                    {i < 3 ? (
+                      <line
+                        x1={stage.x + 64}
+                        y1="24"
+                        x2={stage.x + 80}
+                        y2="24"
+                        stroke="#64748b"
+                        strokeWidth="1"
+                        markerEnd="url(#arrow)"
+                      />
+                    ) : null}
+                  </g>
+                ))}
+              </svg>
             </div>
           </div>
         </div>

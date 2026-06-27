@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 type MobileTabsProps = {
   terminal: ReactNode;
   network: ReactNode;
+  attack: ReactNode;
   events: ReactNode;
   mentor: ReactNode;
 };
@@ -14,18 +15,22 @@ type MobileTabsProps = {
 export function TrainingMobileTabs({
   terminal,
   network,
+  attack,
   events,
   mentor,
 }: MobileTabsProps): ReactElement {
   return (
     <div className="flex min-h-0 flex-1 w-full flex-col">
       <Tabs defaultValue="terminal" className="flex h-full min-h-0 w-full flex-col">
-        <TabsList className="grid w-full grid-cols-4 bg-slate-900">
+        <TabsList className="grid w-full grid-cols-5 bg-slate-900">
           <TabsTrigger value="terminal" className="text-[10px]">
             Terminal
           </TabsTrigger>
           <TabsTrigger value="network" className="text-[10px]">
             Network
+          </TabsTrigger>
+          <TabsTrigger value="attack" className="text-[10px]">
+            Threats
           </TabsTrigger>
           <TabsTrigger value="events" className="text-[10px]">
             Events
@@ -39,6 +44,9 @@ export function TrainingMobileTabs({
         </TabsContent>
         <TabsContent value="network" className="mt-0 min-h-0 flex-1 overflow-hidden p-2 data-[state=active]:flex data-[state=active]:flex-col">
           {network}
+        </TabsContent>
+        <TabsContent value="attack" className="mt-0 min-h-0 flex-1 overflow-hidden p-2 data-[state=active]:flex data-[state=active]:flex-col">
+          {attack}
         </TabsContent>
         <TabsContent value="events" className="mt-0 min-h-0 flex-1 overflow-hidden p-2 data-[state=active]:flex data-[state=active]:flex-col">
           {events}

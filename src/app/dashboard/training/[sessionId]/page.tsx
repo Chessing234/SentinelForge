@@ -6,6 +6,7 @@ import { TrainingSimulatorView } from "@/components/dashboard/training-simulator
 import { auth } from "@/auth";
 import { getConversationBySession, getSessionById, getSessionEvents } from "@/db/queries";
 import type { InitialTrainingPayload } from "@/hooks/use-training-session";
+import { adversaryAgent } from "@/lib/agents/adversary";
 import { environmentAgent, toOverview, type EnvironmentOverview } from "@/lib/agents/environment";
 import type { NetworkTopology } from "@/lib/agents/types";
 
@@ -85,6 +86,8 @@ export default async function TrainingSessionPage({
     createdAt: m.createdAt.toISOString(),
   }));
 
+  const initialAttackChain = await adversaryAgent.getStatus(sessionId, Number(session.user.id));
+
   const initial: InitialTrainingPayload = {
     sessionId,
     scenarioName: row.scenario?.name ?? "Training lab",
@@ -107,7 +110,11 @@ export default async function TrainingSessionPage({
           Session #{sessionId} · {row.scenario?.name ?? "Lab"}
         </p>
       </div>
-      <TrainingSimulatorView initial={initial} initialMentorMessages={initialMentorMessages} />
+      <TrainingSimulatorView
+        initial={initial}
+        initialMentorMessages={initialMentorMessages}
+        initialAttackChain={initialAttackChain}
+      />
     </div>
   );
 }
