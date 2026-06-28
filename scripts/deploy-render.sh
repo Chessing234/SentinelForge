@@ -57,14 +57,22 @@ cmd_deploy() {
 
 cmd_seed() {
   echo "==> Running db:seed via Render one-off job"
-  render jobs create "${SERVICE_ID}" \
+  if render jobs create "${SERVICE_ID}" \
     --start-command "npm run db:seed" \
-    --confirm -o text
-  echo "==> Running db:seed:enhanced"
-  render jobs create "${SERVICE_ID}" \
-    --start-command "npm run db:seed:enhanced" \
-    --confirm -o text
-  echo "==> Seed jobs submitted. Watch: render jobs list ${SERVICE_ID}"
+    --confirm -o text 2>/dev/null; then
+    echo "==> Running db:seed:enhanced"
+    render jobs create "${SERVICE_ID}" \
+      --start-command "npm run db:seed:enhanced" \
+      --confirm -o text 2>/dev/null || true
+    echo "==> Seed jobs submitted. Watch: render jobs list ${SERVICE_ID}"
+    return 0
+  fi
+  echo ""
+  echo "One-off jobs require a paid Render plan on free tiers."
+  echo "Seed manually via SSH (interactive):"
+  echo "  render ssh ${SERVICE_ID}"
+  echo "  npm run db:seed && npm run db:seed:enhanced"
+  return 1
 }
 
 cmd_logs() {
@@ -88,7 +96,7 @@ cmd_health() {
 
 cmd_all() {
   cmd_deploy
-  cmd_seed
+  cmd_seed || true
   cmd_health || echo "Health check failed — service may still be warming up."
   echo ""
   echo "Demo login: ${APP_URL}/login"
