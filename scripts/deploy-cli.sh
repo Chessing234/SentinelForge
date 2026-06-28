@@ -13,12 +13,13 @@ SentinelForge deploy CLI
 
   ./scripts/deploy-cli.sh docker   Local/production Docker Compose stack
   ./scripts/deploy-cli.sh fly      Fly.io (Docker + Postgres)
-  ./scripts/deploy-cli.sh render   Validate render.yaml + Render instructions
+  ./scripts/deploy-cli.sh render [status|deploy|seed|logs|health|all]
   ./scripts/deploy-cli.sh all      Run render validate + docker build smoke test
 
 Examples:
   HTTP_PORT=8088 ./scripts/deploy-cli.sh docker
   FLY_APP=my-sentinel ./scripts/deploy-cli.sh fly
+  ./scripts/deploy-cli.sh render all
 EOF
 }
 
@@ -34,7 +35,7 @@ run_fly() {
 
 run_render() {
   chmod +x "$ROOT/scripts/deploy-render.sh"
-  "$ROOT/scripts/deploy-render.sh"
+  "$ROOT/scripts/deploy-render.sh" "${2:-status}"
 }
 
 run_all() {
@@ -53,7 +54,7 @@ run_all() {
 case "${TARGET}" in
   docker) run_docker ;;
   fly) run_fly ;;
-  render) run_render ;;
+  render) run_render "$@" ;;
   all) run_all ;;
   -h|--help|help|"")
     usage

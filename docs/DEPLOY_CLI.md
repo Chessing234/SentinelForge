@@ -98,7 +98,7 @@ Health: `https://<app-name>.fly.dev/api/health`
 
 **Required:** `DATABASE_URL`, `AUTH_SECRET`, public URL (`AUTH_URL`, `NEXTAUTH_URL`, `NEXT_PUBLIC_APP_URL`)
 
-**Recommended:** `GEMINI_API_KEY`
+**Recommended:** `OPENAI_API_KEY` or `GEMINI_API_KEY` (OpenAI is used when both are set)
 
 **Optional:** Stripe, Google/Slack OAuth, Slack bot — see `.env.example`
 

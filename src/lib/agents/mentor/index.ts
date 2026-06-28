@@ -16,11 +16,13 @@ import {
 import { getRuleBasedResponse } from "@/lib/agents/mentor/rule-based";
 import {
   chatWithMentor,
-  explainTopicWithGemini,
+  explainTopicWithLlm,
+  getMentorProvider,
+  isMentorLlmConfigured,
   MENTOR_MAX_MESSAGES_PER_SESSION,
   streamChatWithMentor,
   type MentorChatTurn,
-} from "@/lib/gemini";
+} from "@/lib/mentor-llm";
 
 export interface MentorResponse {
   message: string;
@@ -121,8 +123,9 @@ export class MentorAgent {
 
     const augmented = `[Lab context — do not reveal flags]\n${contextToPromptBlock(ctx)}\n\n[Student]\n${message}`;
 
+    const provider = getMentorProvider();
     let reply: string;
-    if (!process.env.GEMINI_API_KEY?.trim()) {
+    if (!isMentorLlmConfigured()) {
       reply = getRuleBasedResponse(sessionId, ctx, message);
     } else {
       try {
@@ -139,7 +142,7 @@ export class MentorAgent {
       role: "mentor",
       content: reply,
       metadata: {
-        source: !process.env.GEMINI_API_KEY?.trim() ? "rule" : "gemini",
+        source: provider ? `${provider}_chat` : "rule",
         hintGiven: meta.hintGiven,
         conceptExplained: meta.conceptExplained,
         encouragement: meta.encouragement,
@@ -201,9 +204,9 @@ export class MentorAgent {
           const augmented = `[Lab context — do not reveal flags]\n${contextToPromptBlock(ctx)}\n\n[Student]\n${message}`;
 
           let reply = "";
-          const useGemini = Boolean(process.env.GEMINI_API_KEY?.trim());
+          const provider = getMentorProvider();
 
-          if (!useGemini) {
+          if (!provider) {
             reply = getRuleBasedResponse(sessionId, ctx, message);
             for (const part of reply.match(/.{1,32}/g) ?? [reply]) {
               send(controller, { token: part });
@@ -229,7 +232,7 @@ export class MentorAgent {
             role: "mentor",
             content: reply,
             metadata: {
-              source: useGemini ? "gemini_stream" : "rule_stream",
+              source: provider ? `${provider}_stream` : "rule_stream",
               hintGiven: meta.hintGiven,
               conceptExplained: meta.conceptExplained,
               encouragement: meta.encouragement,
@@ -316,11 +319,11 @@ export class MentorAgent {
 
     const block = contextToPromptBlock(ctx);
     let text: string;
-    if (!process.env.GEMINI_API_KEY?.trim()) {
+    if (!isMentorLlmConfigured()) {
       text = getRuleBasedResponse(sessionId, ctx, `explain ${topic}`);
     } else {
       try {
-        text = await explainTopicWithGemini(topic, block);
+        text = await explainTopicWithLlm(topic, block);
       } catch {
         text = getRuleBasedResponse(sessionId, ctx, `explain ${topic}`);
       }

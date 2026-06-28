@@ -70,10 +70,11 @@ export function checkEnv(): void {
     warnings.push({ key: "STRIPE_*", message: "Stripe not configured; billing is disabled." });
   }
 
-  if (!has("GEMINI_API_KEY")) {
+  if (!has("OPENAI_API_KEY") && !has("GEMINI_API_KEY")) {
     warnings.push({
-      key: "GEMINI_API_KEY",
-      message: "GEMINI_API_KEY not set; AI mentor falls back to rule-based responses.",
+      key: "OPENAI_API_KEY",
+      message:
+        "Neither OPENAI_API_KEY nor GEMINI_API_KEY is set; AI mentor falls back to rule-based responses.",
     });
   }
 

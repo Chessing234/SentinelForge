@@ -58,6 +58,7 @@ Copy **`.env.example`** to **`.env`**. Highlights:
 | Auth | `AUTH_SECRET`, `AUTH_URL` or `NEXTAUTH_URL` |
 | OAuth | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`; `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` (user sign-in) |
 | Gemini | `GEMINI_API_KEY`, optional `GEMINI_MODEL` |
+| OpenAI (mentor) | `OPENAI_API_KEY`, optional `OPENAI_MODEL` (preferred if both AI keys set) |
 | Slack app (bot, events, slash commands) | `SLACK_BOT_CLIENT_ID`, `SLACK_BOT_CLIENT_SECRET`, `SLACK_SIGNING_SECRET`, `SLACK_TOKEN_ENCRYPTION_KEY` |
 | Stripe | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*` (see below) |
 | App / sockets | `NEXT_PUBLIC_APP_URL` |

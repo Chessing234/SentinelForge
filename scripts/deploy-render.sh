@@ -1,53 +1,114 @@
 #!/usr/bin/env bash
-# Validate and guide Render deployment via CLI + Dashboard Blueprint.
-#
-# Render Blueprints are applied from the Dashboard (Git-connected repo).
-# This script validates render.yaml, checks auth, and prints next steps.
+# Render deployment via CLI (no Dashboard required after initial Blueprint setup).
 #
 # Usage:
-#   ./scripts/deploy-render.sh
-#   RENDER_API_KEY=rnd_... ./scripts/deploy-render.sh
+#   ./scripts/deploy-render.sh              # validate + status
+#   ./scripts/deploy-render.sh deploy       # trigger deploy and wait
+#   ./scripts/deploy-render.sh seed         # one-off job: db:seed + enhanced
+#   ./scripts/deploy-render.sh logs         # tail recent logs
+#   ./scripts/deploy-render.sh health       # curl /api/health
+#   ./scripts/deploy-render.sh all          # deploy + seed + health
+#
+# Env:
+#   RENDER_SERVICE_ID=srv-...   (default: sentinelforge service)
+#   RENDER_SERVICE_NAME=...     (default: sentinelforge)
+#   RENDER_APP_URL=...          (default: https://sentinelforge.onrender.com)
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-if ! command -v render >/dev/null 2>&1; then
-  echo "Install Render CLI: brew install render" >&2
-  exit 1
-fi
+SERVICE_ID="${RENDER_SERVICE_ID:-srv-d8nuatmgvqtc73e55igg}"
+SERVICE_NAME="${RENDER_SERVICE_NAME:-sentinelforge}"
+APP_URL="${RENDER_APP_URL:-https://sentinelforge.onrender.com}"
+CMD="${1:-status}"
 
-echo "==> Validating render.yaml"
-render blueprints validate render.yaml
+require_render() {
+  if ! command -v render >/dev/null 2>&1; then
+    echo "Install Render CLI: brew install render && render login" >&2
+    exit 1
+  fi
+  if ! render whoami >/dev/null 2>&1; then
+    echo "Run: render login" >&2
+    exit 1
+  fi
+}
 
-if [[ -n "${RENDER_API_KEY:-}" ]]; then
-  export RENDER_API_KEY
-  echo "==> Render API key detected"
-elif render whoami -o json >/dev/null 2>&1; then
-  echo "==> Render CLI authenticated: $(render whoami 2>/dev/null || true)"
-else
-  echo "==> Not logged in to Render. Run one of:"
-  echo "    render login"
-  echo "    export RENDER_API_KEY=rnd_...   # from https://dashboard.render.com/u/settings#api-keys"
-fi
+cmd_status() {
+  echo "==> Render CLI: $(render whoami 2>/dev/null | head -1)"
+  echo "==> Validating render.yaml"
+  render blueprints validate render.yaml
+  echo ""
+  echo "==> Service: ${SERVICE_NAME} (${SERVICE_ID})"
+  echo "==> URL: ${APP_URL}"
+  render services list -o text 2>/dev/null | grep -i sentinel || true
+  echo ""
+  render deploys list "${SERVICE_ID}" -o text 2>/dev/null | head -4 || true
+  echo ""
+  echo "Set secrets in Dashboard (no CLI env API yet):"
+  echo "  OPENAI_API_KEY=sk-...   # AI mentor"
+  echo "  https://dashboard.render.com/web/${SERVICE_ID}/env"
+}
 
-REMOTE="$(git remote get-url origin 2>/dev/null || echo "")"
-if [[ -n "${REMOTE}" ]]; then
-  echo "==> Git remote: ${REMOTE}"
-else
-  echo "==> Warning: no git remote 'origin'. Push render.yaml before applying Blueprint."
-fi
+cmd_deploy() {
+  echo "==> Deploying ${SERVICE_NAME} (${SERVICE_ID})"
+  render deploys create "${SERVICE_ID}" --wait --confirm -o text
+  echo "==> Deploy finished"
+}
 
-echo ""
-echo "Render deploy steps (CLI + Dashboard):"
-echo "  1. Push code:     git push origin main"
-echo "  2. Dashboard:     https://dashboard.render.com/blueprints"
-echo "                    → New Blueprint → connect repo → Apply render.yaml"
-echo "  3. After first deploy, seed DB:"
-echo "                    render ssh sentinelforge   # or use Dashboard shell"
-echo "                    npm run db:seed && npm run db:seed:enhanced"
-echo ""
-echo "Re-deploy an existing service (after Blueprint is applied):"
-echo "  render services list -o json"
-echo "  render deploys create <SERVICE_ID> --wait"
-echo ""
-echo "Health check: GET https://<your-service>.onrender.com/api/health"
+cmd_seed() {
+  echo "==> Running db:seed via Render one-off job"
+  render jobs create "${SERVICE_ID}" \
+    --start-command "npm run db:seed" \
+    --confirm -o text
+  echo "==> Running db:seed:enhanced"
+  render jobs create "${SERVICE_ID}" \
+    --start-command "npm run db:seed:enhanced" \
+    --confirm -o text
+  echo "==> Seed jobs submitted. Watch: render jobs list ${SERVICE_ID}"
+}
+
+cmd_logs() {
+  render logs "${SERVICE_ID}" --tail --confirm 2>/dev/null || render logs "${SERVICE_ID}" --confirm
+}
+
+cmd_health() {
+  echo "==> GET ${APP_URL}/api/health"
+  local tries=3 code body
+  for i in $(seq 1 "$tries"); do
+    code="$(curl -s -o /tmp/sf-health.json -w "%{http_code}" -m 90 "${APP_URL}/api/health" || echo "000")"
+    body="$(cat /tmp/sf-health.json 2>/dev/null || echo timeout)"
+    echo "Attempt ${i}: HTTP ${code} — ${body}"
+    if [[ "${code}" == "200" ]]; then
+      return 0
+    fi
+    [[ "${i}" -lt "${tries}" ]] && echo "Retrying (cold start)..." && sleep 15
+  done
+  return 1
+}
+
+cmd_all() {
+  cmd_deploy
+  cmd_seed
+  cmd_health || echo "Health check failed — service may still be warming up."
+  echo ""
+  echo "Demo login: ${APP_URL}/login"
+  echo "  student1@state.edu / password123"
+}
+
+require_render
+
+case "${CMD}" in
+  status|"") cmd_status ;;
+  deploy) cmd_deploy ;;
+  seed) cmd_seed ;;
+  logs) cmd_logs ;;
+  health) cmd_health ;;
+  all) cmd_all ;;
+  -h|--help|help)
+    sed -n '2,12p' "$0" | sed 's/^# \?//'
+    ;;
+  *)
+    echo "Unknown command: ${CMD} (try: deploy | seed | logs | health | all)" >&2
+    exit 1
+    ;;
+esac
