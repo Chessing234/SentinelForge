@@ -1,154 +1,204 @@
 # SentinelForge
 
-SentinelForge is a cyber training and workforce platform built with **Next.js 15** (App Router), **NextAuth**, **Drizzle ORM**, and **PostgreSQL**. It includes hands-on training sessions (with Socket.IO), job placement, Slack integrations, **Stripe billing** for organizations, and an **enterprise admin** dashboard.
+**SentinelForge** is an autonomous cybersecurity apprenticeship platform. Students train in live, generated lab environments while a multi-agent system runs alongside them: an **Adversary** that executes attack chains, a **Mentor** that streams Socratic guidance, an **Environment** agent that powers an in-browser terminal, and an **Evaluator** that scores skills and awards certifications. Organizations get analytics, hiring, and enterprise admin tooling on top.
 
-## Public site (GitHub Pages)
+Built with **Next.js 15** (App Router), a custom **Node + Socket.IO** server, **NextAuth**, **Drizzle ORM**, and **PostgreSQL**.
 
-A **static** landing page lives in **`docs/`** and deploys via **GitHub Actions** to **`https://<owner>.github.io/<repo>/`** when you enable Pages with source **GitHub Actions**. This is only marketing copy — the full app still needs Docker/your own host. Setup steps: [docs/GITHUB_PAGES.md](docs/GITHUB_PAGES.md).
+- **Live demo:** https://sentinelforge.onrender.com
+- **Health check:** https://sentinelforge.onrender.com/api/health → `{ "status": "ok", "database": "up" }`
 
-# Deploy the full app (CLI)
+> The demo runs on Render's free tier, so the first request after idle takes ~30–50s to cold‑start. Refresh once and it stays warm.
 
-See **[docs/DEPLOY_CLI.md](docs/DEPLOY_CLI.md)** — one entrypoint for all targets:
+---
 
-```bash
-./scripts/deploy-cli.sh docker   # Docker Compose on your machine
-./scripts/deploy-cli.sh fly      # Fly.io
-./scripts/deploy-cli.sh render   # Validate + Render Blueprint steps
-./scripts/deploy-cli.sh all      # Validate Render + Docker build smoke test
+## Demo credentials
+
+All demo accounts use the password **`password123`**. Each lands on a fully seeded dashboard.
+
+| Role | Email | What to look at |
+|------|-------|-----------------|
+| **Student** | `student1@state.edu` | Progress, skill radar, certifications, live training simulator |
+| **Enterprise admin** | `enterprise.admin@acme.com` | Org analytics, team management, hiring portal |
+| **Platform admin** | `admin@sentinelforge.com` | Cross‑org admin, scenarios, platform metrics |
+
+The login screen has one‑click **"Use"** buttons that fill these in. Demo data (sessions, mentor conversations, skill history, certifications, hiring matches) is **seeded automatically on first deploy** (see [Seeding](#seeding)).
+
+## Demo walkthrough
+
+1. **Login** as `student1@state.edu` → land on a populated dashboard (streak, recent sessions, recommended scenarios).
+2. **Training** → browse scenarios by difficulty/category → **Start session**.
+3. In the simulator: the **Adversary** executes an attack chain automatically and the **attack timeline** updates live over WebSockets.
+4. Use the **terminal** to investigate; ask the **Mentor** — replies stream token‑by‑token.
+5. **Submit a flag** → scoring runs → progress + skill matrix update.
+6. Visit **Progress** for score history, radar, and certifications.
+7. Sign in as `enterprise.admin@acme.com` → **Analytics**, **Team**, and the **Hiring portal** (ranked candidate matches).
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TB
+  subgraph Client["Browser (React 19 / Next.js App Router)"]
+    UI["Dashboards, Training Simulator, Terminal, Mentor panel"]
+  end
+
+  subgraph Server["Custom Node server (server.ts)"]
+    Next["Next.js 15 (SSR + API routes)"]
+    IO["Socket.IO training server"]
+  end
+
+  subgraph Agents["Multi-agent system (src/lib/agents)"]
+    Adv["Adversary — attack chains / MITRE"]
+    Env["Environment — terminal + flags"]
+    Men["Mentor — LLM + rule-based fallback"]
+    Ev["Evaluator — scoring / certifications"]
+  end
+
+  subgraph Data["Persistence & integrations"]
+    PG[("PostgreSQL (Drizzle ORM)")]
+    LLM["OpenAI / Gemini (optional)"]
+    Stripe["Stripe billing (optional)"]
+    Slack["Slack (optional)"]
+  end
+
+  UI -- "HTTP / Auth (NextAuth)" --> Next
+  UI -- "WebSocket (live terminal, timeline, mentor stream)" --> IO
+  Next --> Agents
+  IO --> Agents
+  Agents --> PG
+  Men -. "streams if key set" .-> LLM
+  Next --> Stripe
+  Next --> Slack
 ```
 
-**Ordered checklist:** [docs/NEXT_STEPS.md](docs/NEXT_STEPS.md).
+- **`server.ts`** boots Next.js and Socket.IO on one HTTP server, validates env, and handles graceful shutdown (SIGTERM closes sockets, HTTP, and the PG pool).
+- **Agents** are deterministic by default. The Mentor uses OpenAI/Gemini when a key is present and **falls back to rule‑based responses** otherwise — no crashes, no blank screens.
+- **Real‑time**: the training simulator uses Socket.IO with automatic reconnection (5 attempts, backoff) so a dropped connection recovers on its own.
 
-## Prerequisites
+### Project layout
 
-- **Node.js** 18.18+ (20+ recommended for local development)
-- **PostgreSQL** 14+
-- Optional: **Stripe** account (checkout, customer portal, webhooks)
-- Optional: **Google** / **Slack** OAuth apps for sign-in
-- Optional: **Google Gemini** API key for AI mentor features
+- `src/app` — App Router pages, API routes, `error.tsx` / `global-error.tsx` / `loading.tsx`
+- `src/lib/agents` — adversary, environment, mentor, evaluator, placement
+- `src/lib` — Stripe billing, Slack, logger, rate limiter, metrics, RBAC, env checks
+- `src/db` — Drizzle schema, queries, seeds (`seed.ts`, `enhanced-seed.ts`), migrations in `drizzle/`
+- `src/middleware.ts` — security headers, rate limits, billing RBAC, public webhook
+- `scripts/` — deploy + seed helpers, `docker-entrypoint.sh`, `seed-if-needed.ts`
 
-## Quick start
+---
+
+## Local development
 
 ```bash
 cp .env.example .env
-# Edit .env — set DATABASE_URL and AUTH_SECRET at minimum
+# Minimum: set DATABASE_URL and AUTH_SECRET (openssl rand -base64 32)
 
 npm install
 npm run db:migrate
-npm run db:seed
-# Optional richer demo data (~orgs, users, sessions, jobs):
-npm run db:seed:enhanced
+npm run db:seed            # scenarios, orgs, demo users
+npm run db:seed:enhanced   # rich demo data for the accounts above
 
-npm run dev
+npm run dev                # Next.js + Socket.IO on http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The dev server runs **`server.ts`**, which starts Next.js and the **Socket.IO** training server together.
+The dev server runs **`server.ts`**, starting Next.js and Socket.IO together.
 
-### First login
-
-After `db:seed`, use the credentials printed by the seed script (or create a user via **Register** if enabled).
-
-## Environment variables
-
-Copy **`.env.example`** to **`.env`**. Highlights:
-
-| Area | Variables |
-|------|-----------|
-| Database | `DATABASE_URL` |
-| Auth | `AUTH_SECRET`, `AUTH_URL` or `NEXTAUTH_URL` |
-| OAuth | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`; `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` (user sign-in) |
-| Gemini | `GEMINI_API_KEY`, optional `GEMINI_MODEL` |
-| OpenAI (mentor) | `OPENAI_API_KEY`, optional `OPENAI_MODEL` (preferred if both AI keys set) |
-| Slack app (bot, events, slash commands) | `SLACK_BOT_CLIENT_ID`, `SLACK_BOT_CLIENT_SECRET`, `SLACK_SIGNING_SECRET`, `SLACK_TOKEN_ENCRYPTION_KEY` |
-| Stripe | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*` (see below) |
-| App / sockets | `NEXT_PUBLIC_APP_URL` |
-
-### Stripe billing
-
-1. Create **Products** and **Prices** in Stripe for academic and enterprise plans (monthly and annual).
-2. Set price IDs in `.env`:
-
-   - `STRIPE_PRICE_ACADEMIC_MONTHLY`
-   - `STRIPE_PRICE_ACADEMIC_ANNUAL`
-   - `STRIPE_PRICE_ENTERPRISE_MONTHLY`
-   - `STRIPE_PRICE_ENTERPRISE_ANNUAL`
-
-3. Add webhook endpoint: **`/api/billing/webhook`** (full URL: `{NEXTAUTH_URL}/api/billing/webhook`).
-4. Subscribe to events you handle in code (e.g. `checkout.session.completed`, subscription lifecycle events).
-5. Set `STRIPE_WEBHOOK_SECRET` from the webhook signing secret.
-
-Checkout and portal routes require Stripe keys; the webhook route is **public** (signature-verified) and is excluded from session middleware where configured.
-
-### Slack
-
-- **User login** via Slack uses `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` (NextAuth provider).
-- **Workspace bot** flows use `SLACK_BOT_*` and `SLACK_SIGNING_SECRET` as in `.env.example`.
-
-Use a strong **`SLACK_TOKEN_ENCRYPTION_KEY`** in production (do not rely on the dev fallback).
-
-## npm scripts
+### npm scripts
 
 | Script | Purpose |
 |--------|---------|
 | `npm run dev` | Dev: Next + Socket.IO |
 | `npm run build` | Production Next.js build |
-| `npm run start` | Production: `server.ts` |
+| `npm run start` | Production server (`server.ts`) |
 | `npm run lint` | ESLint |
-| `npm run db:generate` | Drizzle migrations (generate) |
 | `npm run db:migrate` | Apply migrations |
+| `npm run db:seed` | Base seed (scenarios, orgs, demo users) |
+| `npm run db:seed:enhanced` | Rich demo data for advertised accounts |
 | `npm run db:studio` | Drizzle Studio |
-| `npm run db:seed` | Base seed |
-| `npm run db:seed:enhanced` | Extended demo data |
 
-## Docker
+---
 
-- **`docker-compose.yml`** — local Postgres + Redis for development-style runs.
-- **`docker-compose.prod.yml`** — full production stack: Postgres, Redis, the app, and an nginx reverse proxy (mounts **`./deploy/nginx.conf`**).
+## Environment variables
 
-### Run the production stack
+Copy **`.env.example`** to `.env`. Only `DATABASE_URL` and `AUTH_SECRET` are required — everything else enables an optional integration and degrades gracefully when unset.
+
+| Area | Variables | Required? |
+|------|-----------|-----------|
+| Database | `DATABASE_URL` | **Yes** |
+| Auth | `AUTH_SECRET`, `AUTH_URL` / `NEXTAUTH_URL` | **Yes** (`AUTH_SECRET`) |
+| AI mentor | `OPENAI_API_KEY` (preferred) or `GEMINI_API_KEY`, optional `*_MODEL` | Optional — falls back to rule‑based |
+| OAuth | `GOOGLE_CLIENT_ID/SECRET`, `SLACK_CLIENT_ID/SECRET` | Optional |
+| Slack app | `SLACK_BOT_CLIENT_ID/SECRET`, `SLACK_SIGNING_SECRET`, `SLACK_TOKEN_ENCRYPTION_KEY` | Optional |
+| Stripe | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*` | Optional |
+| App / sockets | `NEXT_PUBLIC_APP_URL` | Optional |
+| Remote seed | `SEED_SECRET` | Optional (see below) |
+
+On Render, `RENDER_EXTERNAL_URL` is automatically mapped to `AUTH_URL` / `NEXTAUTH_URL` / `NEXT_PUBLIC_APP_URL` at startup (see `src/lib/env-check.ts`). The server validates required env at boot and **fails fast in production** if `DATABASE_URL` / `AUTH_SECRET` are missing.
+
+### Enabling the live AI mentor
+
+Set **`GEMINI_API_KEY`** (or `OPENAI_API_KEY`) in the environment and redeploy. Streaming responses turn on automatically; without a key the Mentor still works via deterministic rule‑based guidance.
+
+---
+
+## Production deployment
+
+### Render (used by the live demo)
+
+The repo ships a **`render.yaml`** Blueprint (Docker web service + managed Postgres).
 
 ```bash
-cp .env.example .env.prod   # then fill secrets + your domain
+# One-time: Render Dashboard → New → Blueprint → connect this repo
+render blueprints validate render.yaml     # validate locally
+
+# Ongoing (Render CLI): trigger a deploy of the latest commit on main
+render deploys create <service-id> --wait --confirm
+
+# Verify
+curl https://sentinelforge.onrender.com/api/health
+```
+
+`scripts/deploy-render.sh` wraps deploy / logs / health / seed. See **[docs/DEPLOY_CLI.md](docs/DEPLOY_CLI.md)** for Fly.io and Docker targets.
+
+### Docker (self-hosted)
+
+```bash
+cp .env.example .env.prod   # fill secrets + your domain
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 ```
 
-On boot the app container runs **`scripts/docker-entrypoint.sh`**, which applies DB **migrations** and then `exec`s the server (so `SIGTERM` reaches Node for **graceful shutdown**). The container exposes a health check at **`/api/health`**; nginx waits for the app to be healthy before starting.
+The image entrypoint (`scripts/docker-entrypoint.sh`) applies migrations, runs the idempotent seed guard, then `exec`s the server so SIGTERM reaches Node for graceful shutdown. `docker-compose.prod.yml` adds Postgres, Redis, and an nginx reverse proxy (`deploy/nginx.conf`).
 
-Build the app image with the root **`Dockerfile`**. Production **`DATABASE_URL`** and secrets are injected at runtime via `--env-file` (never baked into the image).
+> This app uses a custom Node server for Socket.IO, so it is **not** deployable to serverless‑only targets (e.g. Vercel functions). Use a container/VM host.
 
-### Ports & TLS
+---
 
-- The nginx host ports are configurable: `HTTP_PORT` (default `80`) and `HTTPS_PORT` (default `443`). Example to avoid a conflict: `HTTP_PORT=8088 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d`.
-- For HTTPS, mount certs into the nginx container and uncomment the TLS server block in **`deploy/nginx.conf`** (instructions are inline in that file).
+## Seeding
 
-### Seeding inside the stack
+Demo data is populated **automatically on first boot**: `scripts/seed-if-needed.ts` runs after migrations, checks whether the demo student already has completed sessions, and if not runs the base + enhanced seeds. It never blocks or fails startup.
+
+To seed manually:
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.prod exec app npm run db:seed
-docker compose -f docker-compose.prod.yml --env-file .env.prod exec app npm run db:seed:enhanced
+# Locally / against an external DATABASE_URL
+npm run db:seed && npm run db:seed:enhanced
+
+# Remotely over HTTP (set SEED_SECRET on the service, then):
+SEED_SECRET=your-secret ./scripts/seed-remote.sh
 ```
 
-## Continuous integration
+Both seeds are **idempotent** — re‑running will not duplicate data.
 
-**`.github/workflows/ci.yml`** runs on push/PR: `npm ci`, lint, `tsc --noEmit`, `next build`, and a Docker image build (no push).
+---
 
-## Health & operations
+## Health, monitoring & operations
 
-- **`GET /api/health`** → `{ "status": "ok", "database": "up" | "down" }` (public, not rate-limited).
-- The server validates required env at startup (**`src/lib/env-check.ts`**) and fails fast in production if `DATABASE_URL` / `AUTH_SECRET` are missing.
-- Graceful shutdown closes Socket.IO, the HTTP server, and the Postgres pool on `SIGTERM`/`SIGINT`.
-
-> Note: this app uses a custom Node server (`server.ts`) for Socket.IO, so it is **not** deployable to serverless-only targets (e.g. Vercel functions). Use a container/VM host.
-
-## Project layout (abbreviated)
-
-- `src/app` — App Router pages, API routes, `error.tsx` / `loading.tsx`, metadata routes
-- `src/components` — UI, billing, admin, training, layout
-- `src/db` — Drizzle schema, queries, seeds, migrations under `drizzle/`
-- `src/lib` — Billing (Stripe), Slack, agents, logger, rate limiter, metrics
-- `src/middleware.ts` — Security headers, rate limits, billing route RBAC, public webhook
-- `deploy/nginx.conf` — Sample nginx reverse proxy
-- `scripts/setup.sh` — Optional environment setup helper
+- **`GET /api/health`** → `{ status, database, timestamp }` (public, not rate‑limited).
+- **Error boundaries**: `src/app/error.tsx` (per‑segment) and `src/app/global-error.tsx` (root layout) log via the structured logger and show a recovery UI — users never see a raw stack trace.
+- **Structured logging** (`src/lib/logger.ts`) redacts secrets and emits JSON in production.
+- **Rate limiting & security headers** via `src/middleware.ts`.
+- **Graceful shutdown** closes Socket.IO, the HTTP server, and the Postgres pool on SIGTERM/SIGINT.
+- **CI** (`.github/workflows/ci.yml`): `npm ci`, lint, `tsc --noEmit`, `next build`, and a Docker build.
 
 ## License
 

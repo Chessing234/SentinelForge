@@ -1,12 +1,23 @@
 /**
- * Comprehensive demo seed (idempotent where possible).
- * Run after migrations and base `db:seed` for scenarios.
+ * Comprehensive demo seed — idempotent and safe to re-run.
  *
- *   npm run db:seed:enhanced
+ * Enriches the THREE advertised demo accounts (and their organizations) so that
+ * every dashboard a judge visits is populated with realistic data:
+ *
+ *   - Student           student1@state.edu       (State University)
+ *   - Enterprise admin   enterprise.admin@acme.com (Acme Corp)
+ *   - Platform admin     admin@sentinelforge.com
+ *
+ * Populates: completed training sessions + events (attack timeline), mentor
+ * conversations, skill history, certifications, and hiring matches (job
+ * applications) for the students in both orgs.
+ *
+ * Run AFTER migrations and base `db:seed`:
+ *   npm run db:seed && npm run db:seed:enhanced
  */
 import bcrypt from "bcryptjs";
-import { addMilliseconds, subDays } from "date-fns";
-import { and, count, eq } from "drizzle-orm";
+import { addMinutes, subDays, subHours } from "date-fns";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { db, postgresClient } from "@/db";
 import {
@@ -18,248 +29,358 @@ import {
   sessionEvents,
   skillAssessments,
   trainingSessions,
+  userCertifications,
   users,
 } from "@/db/schema";
 
-const PASSWORD = "demo123";
+const PASSWORD = "password123";
 const ROUNDS = 10;
 
-async function main(): Promise<void> {
-  const scenarioRows = await db.select({ id: scenarios.id }).from(scenarios).limit(20);
-  if (scenarioRows.length === 0) {
-    throw new Error("No scenarios found. Run `npm run db:seed` first.");
-  }
-  const scenarioIds = scenarioRows.map((r) => r.id);
-
-  const orgRows = [
-    { name: "CyberCorp Industries", slug: "cybercorp-industries", plan: "enterprise" as const, seatLimit: 25 },
-    { name: "State University", slug: "state-university", plan: "academic" as const, seatLimit: 100 },
-    { name: "Free Learners", slug: "free-learners", plan: "free" as const, seatLimit: 5 },
-  ];
-
-  const orgMap = new Map<string, number>();
-  for (const o of orgRows) {
-    const existing = await db.query.organizations.findFirst({ where: eq(organizations.slug, o.slug) });
-    if (existing) {
-      orgMap.set(o.slug, existing.id);
-      continue;
-    }
-    const [ins] = await db.insert(organizations).values(o).returning();
-    if (ins) orgMap.set(o.slug, ins.id);
-  }
-
-  const cyber = orgMap.get("cybercorp-industries");
-  const uni = orgMap.get("state-university");
-  const free = orgMap.get("free-learners");
-  if (!cyber || !uni || !free) throw new Error("Organizations missing after upsert.");
-
-  const passwordHash = await bcrypt.hash(PASSWORD, ROUNDS);
-
-  type SeedUserRow = {
-    email: string;
-    name: string;
-    role: "student" | "instructor" | "admin" | "enterprise_admin";
-    organizationId: number | null;
+/** Deterministic PRNG so re-seeds produce stable, reproducible demo data. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+const rand = mulberry32(20260701);
+const between = (min: number, max: number): number =>
+  Math.round(min + rand() * (max - min));
 
-  const seedUsers: SeedUserRow[] = [
-    { email: "admin@sentinelforge.com", name: "Platform Admin", role: "admin" as const, organizationId: null as number | null },
-    { email: "eadmin@cybercorp.demo", name: "Morgan Blake", role: "enterprise_admin" as const, organizationId: cyber },
-    { email: "eadmin@university.demo", name: "Riley Stone", role: "enterprise_admin" as const, organizationId: uni },
-    { email: "inst1@cybercorp.demo", name: "Casey Ng", role: "instructor" as const, organizationId: cyber },
-    { email: "inst2@cybercorp.demo", name: "Drew Ortiz", role: "instructor" as const, organizationId: cyber },
-    { email: "inst1@university.demo", name: "Dr. Sam Wells", role: "instructor" as const, organizationId: uni },
-    { email: "inst2@university.demo", name: "Dr. Avery Kim", role: "instructor" as const, organizationId: uni },
-  ];
+type Scenario = { id: number; category: string; difficulty: string; name: string };
 
-  for (let i = 1; i <= 15; i += 1) {
-    const org = i <= 8 ? cyber : i <= 13 ? uni : free;
-    seedUsers.push({
-      email: `student${i}@demo.sf`,
-      name: `Student ${i}`,
-      role: "student",
-      organizationId: org,
-    });
-  }
+const SKILLS_BY_CATEGORY: Record<string, string[]> = {
+  network_security: ["Packet analysis", "Traffic baselining", "Lateral movement"],
+  web_security: ["OWASP Top 10 triage", "Injection analysis", "Auth bypass review"],
+  cloud_security: ["IAM misconfig audit", "Storage exposure review"],
+  incident_response: ["Timeline construction", "Containment planning"],
+  malware_analysis: ["Static triage", "Behavioral analysis"],
+  forensics: ["Memory forensics", "Artifact recovery"],
+};
+const CATEGORIES = Object.keys(SKILLS_BY_CATEGORY);
 
-  const userIds: number[] = [];
-  for (const u of seedUsers) {
-    const ex = await db.query.users.findFirst({ where: eq(users.email, u.email) });
-    if (ex) {
-      userIds.push(ex.id);
-      continue;
-    }
-    const [row] = await db
-      .insert(users)
-      .values({ ...u, passwordHash })
-      .returning({ id: users.id });
-    if (row) userIds.push(row.id);
-  }
+const MENTOR_EXCHANGES: Array<[string, string]> = [
+  [
+    "I'm stuck on lateral movement between the two subnets.",
+    "Look at the authentication artifacts on the pivot host — check for reused service-account credentials and Kerberos ticket requests that cross the segment boundary.",
+  ],
+  [
+    "How do I confirm this alert is a true positive?",
+    "Correlate the process tree with the network beacon interval. A consistent jittered callback plus an unsigned parent process is a strong true-positive signal.",
+  ],
+  [
+    "What should I check first in this memory capture?",
+    "Start with the process list and network connections, then diff loaded modules against a known-good baseline to surface injected code.",
+  ],
+  [
+    "The flag isn't in the obvious log file.",
+    "Pivot to the artifacts the attacker touched last — staged archives and shadow-copy tampering often hide the final indicator.",
+  ],
+];
 
-  const student1 = await db.query.users.findFirst({ where: eq(users.email, "student1@demo.sf") });
-  if (!student1?.organizationId) {
-    throw new Error("Expected student1@demo.sf after user seed.");
-  }
+async function upsertUser(row: {
+  email: string;
+  name: string;
+  role: "student" | "instructor" | "admin" | "enterprise_admin";
+  organizationId: number | null;
+  passwordHash: string;
+}): Promise<number> {
+  const existing = await db.query.users.findFirst({ where: eq(users.email, row.email) });
+  if (existing) return existing.id;
+  const [ins] = await db.insert(users).values(row).returning({ id: users.id });
+  return ins!.id;
+}
 
-  const existingSessions = await db.query.trainingSessions.findMany({
-    where: eq(trainingSessions.userId, student1.id),
-    limit: 5,
+/** Give a user a full spread of skill assessments across all six categories. */
+async function seedSkillsForUser(userId: number, strength: number): Promise<void> {
+  const existing = await db.query.skillAssessments.findFirst({
+    where: eq(skillAssessments.userId, userId),
   });
-  if (existingSessions.length >= 5) {
-    console.log("Enhanced sessions already present; skipping bulk session insert.");
-    return;
+  if (existing) return;
+
+  const rows: (typeof skillAssessments.$inferInsert)[] = [];
+  for (const category of CATEGORIES) {
+    for (const skill of SKILLS_BY_CATEGORY[category]!) {
+      // Two data points per skill to create visible history/progression.
+      const base = Math.min(96, Math.max(35, strength + between(-12, 12)));
+      rows.push({
+        userId,
+        category,
+        skill,
+        score: Math.max(30, base - between(6, 16)),
+        confidence: (0.6 + rand() * 0.3).toFixed(2),
+        assessedAt: subDays(new Date(), between(45, 80)),
+      });
+      rows.push({
+        userId,
+        category,
+        skill,
+        score: base,
+        confidence: (0.7 + rand() * 0.25).toFixed(2),
+        assessedAt: subDays(new Date(), between(1, 20)),
+      });
+    }
   }
+  await db.insert(skillAssessments).values(rows);
+}
 
-  const statuses: Array<"completed" | "running" | "abandoned" | "pending"> = [
-    "completed",
-    "completed",
-    "completed",
-    "running",
-    "abandoned",
-    "pending",
-  ];
+/** Create N completed sessions (plus a few in-flight ones) with events + mentor chat. */
+async function seedSessionsForUser(
+  userId: number,
+  orgId: number | null,
+  scenarioPool: Scenario[],
+  opts: { completed: number; withMentor?: boolean },
+): Promise<void> {
+  const existingCompleted = await db.query.trainingSessions.findMany({
+    where: and(
+      eq(trainingSessions.userId, userId),
+      eq(trainingSessions.status, "completed"),
+    ),
+    limit: opts.completed,
+  });
+  if (existingCompleted.length >= opts.completed) return;
 
-  for (let i = 0; i < 50; i += 1) {
-    const uid = userIds[(i % userIds.length) + 0] ?? userIds[0]!;
-    const urow = await db.query.users.findFirst({ where: eq(users.id, uid) });
-    const orgId = urow?.organizationId ?? cyber;
-    const scenarioId = scenarioIds[i % scenarioIds.length]!;
-    const status = statuses[i % statuses.length];
-    const daysAgo = (i * 3) % 90;
-    const created = subDays(new Date(), daysAgo);
-    const completed =
-      status === "completed"
-        ? addMilliseconds(created, 86_400_000)
-        : status === "abandoned"
-          ? addMilliseconds(created, 3_600_000)
-          : null;
+  // Spread completions so that recent ones (last 1-3 days) build a streak,
+  // and older ones populate score history / monthly analytics.
+  const dayOffsets = [1, 2, 3, 6, 10, 16, 24, 33, 45, 60, 74, 88];
+
+  for (let i = 0; i < opts.completed; i += 1) {
+    const scenario = scenarioPool[i % scenarioPool.length]!;
+    const daysAgo = dayOffsets[i % dayOffsets.length]! + Math.floor(i / dayOffsets.length) * 2;
+    const startedAt = subDays(new Date(), daysAgo);
+    const durationMin = between(18, 55);
+    const completedAt = addMinutes(startedAt, durationMin);
+    const score = between(62, 97);
+
     const [sess] = await db
       .insert(trainingSessions)
       .values({
-        userId: uid,
-        scenarioId,
+        userId,
+        scenarioId: scenario.id,
         organizationId: orgId,
-        status,
-        finalScore: status === "completed" ? 60 + (i % 36) : null,
-        timeSpent: status === "completed" ? 600 + (i % 400) : null,
-        startedAt: created,
-        completedAt: completed,
-        createdAt: created,
+        status: "completed",
+        finalScore: score,
+        timeSpent: durationMin * 60,
+        startedAt,
+        completedAt,
+        createdAt: startedAt,
       })
       .returning({ id: trainingSessions.id });
-
     if (!sess) continue;
-    if (status === "completed") {
-      await db.insert(sessionEvents).values([
-        { sessionId: sess.id, eventType: "environment_ready", payload: { seeded: true }, createdAt: created },
-        { sessionId: sess.id, eventType: "flag_submitted", payload: { submitted: "SF{wrong}" }, createdAt: addMilliseconds(created, 3_600_000) },
-        { sessionId: sess.id, eventType: "flag_incorrect", payload: {}, createdAt: addMilliseconds(created, 3_600_000) },
-        {
-          sessionId: sess.id,
-          eventType: "flag_correct",
-          payload: { flagId: "flag-1" },
-          createdAt: addMilliseconds(created, 7_200_000),
-        },
-        {
-          sessionId: sess.id,
-          eventType: "session_completed",
-          payload: { totalScore: 60 + (i % 36), grade: "B" },
-          createdAt: completed ?? addMilliseconds(created, 10_800_000),
-        },
-      ]);
-    }
-  }
 
-  const [{ c: skillCount }] = await db.select({ c: count() }).from(skillAssessments);
-  if (Number(skillCount) < 300) {
-    const categories = [
-      "network_security",
-      "web_security",
-      "forensics",
-      "incident_response",
-      "malware_analysis",
-      "cloud_security",
-    ] as const;
-    for (const uid of userIds.slice(0, 12)) {
-      for (let c = 0; c < 6; c += 1) {
-        await db.insert(skillAssessments).values({
-          userId: uid,
-          category: categories[c % categories.length],
-          skill: `skill_${c}`,
-          score: 55 + ((uid + c) % 40),
-          confidence: "0.75",
-        });
-      }
-    }
-  }
+    const t = (min: number): Date => addMinutes(startedAt, min);
+    await db.insert(sessionEvents).values([
+      { sessionId: sess.id, eventType: "environment_ready", payload: { seeded: true }, createdAt: t(0) },
+      { sessionId: sess.id, eventType: "attack_started", payload: { technique: scenario.name }, createdAt: t(2) },
+      { sessionId: sess.id, eventType: "attack_detected", payload: { indicator: "suspicious_process" }, createdAt: t(5) },
+      { sessionId: sess.id, eventType: "hint_requested", payload: {}, createdAt: t(8) },
+      { sessionId: sess.id, eventType: "hint_given", payload: { hint: "Inspect the pivot host." }, createdAt: t(9) },
+      { sessionId: sess.id, eventType: "flag_submitted", payload: { submitted: "SF{try-1}" }, createdAt: t(durationMin - 6) },
+      { sessionId: sess.id, eventType: "flag_incorrect", payload: {}, createdAt: t(durationMin - 6) },
+      { sessionId: sess.id, eventType: "flag_correct", payload: { flagId: "flag-1" }, createdAt: t(durationMin - 2) },
+      { sessionId: sess.id, eventType: "session_completed", payload: { totalScore: score, grade: score >= 85 ? "A" : "B" }, createdAt: completedAt },
+    ]);
 
-  const [{ c: mentorCount }] = await db.select({ c: count() }).from(mentorConversations);
-  if (Number(mentorCount) < 40) {
-    const completedSessions = await db.query.trainingSessions.findMany({
-      where: eq(trainingSessions.status, "completed"),
-      limit: 30,
-    });
-    for (const s of completedSessions) {
+    if (opts.withMentor && i % 2 === 0) {
+      const [q, a] = MENTOR_EXCHANGES[i % MENTOR_EXCHANGES.length]!;
       await db.insert(mentorConversations).values([
-        { sessionId: s.id, role: "user", content: "I'm stuck on lateral movement.", createdAt: s.createdAt },
-        {
-          sessionId: s.id,
-          role: "mentor",
-          content: "Review the service accounts on the pivot host and look for reused passwords.",
-          createdAt: addMilliseconds(s.createdAt, 3_600_000),
-        },
+        { sessionId: sess.id, role: "user", content: q, createdAt: t(6) },
+        { sessionId: sess.id, role: "mentor", content: a, createdAt: t(7) },
       ]);
     }
   }
 
-  const jobTitles = [
-    "Junior SOC Analyst",
-    "Threat Hunter",
-    "Security Engineer",
-    "Incident Responder",
-    "Security Intern",
-  ];
-  const orgsForJobs = [cyber, cyber, cyber, uni, cyber];
-  const jobIds: number[] = [];
-  for (let j = 0; j < jobTitles.length; j += 1) {
-    const ex = await db.query.jobs.findFirst({ where: eq(jobs.title, jobTitles[j]!) });
-    if (ex) {
-      jobIds.push(ex.id);
-      continue;
-    }
-    const [job] = await db
-      .insert(jobs)
+  // A single in-progress session so the "resume training" state is demoable.
+  const running = await db.query.trainingSessions.findFirst({
+    where: and(
+      eq(trainingSessions.userId, userId),
+      inArray(trainingSessions.status, ["running", "paused"]),
+    ),
+  });
+  if (!running && opts.withMentor) {
+    const scenario = scenarioPool[0]!;
+    const startedAt = subHours(new Date(), 1);
+    const [sess] = await db
+      .insert(trainingSessions)
       .values({
-        organizationId: orgsForJobs[j]!,
-        title: jobTitles[j]!,
-        description: `${jobTitles[j]} — seeded role for hiring demo.`,
-        requiredSkills: ["network_security", "incident_response"],
-        location: "Remote",
-        salaryRange: "Competitive",
-        jobType: "full-time",
-        experienceLevel: "mid",
+        userId,
+        scenarioId: scenario.id,
+        organizationId: orgId,
+        status: "running",
+        startedAt,
+        createdAt: startedAt,
       })
-      .returning({ id: jobs.id });
-    if (job) jobIds.push(job.id);
+      .returning({ id: trainingSessions.id });
+    if (sess) {
+      await db.insert(sessionEvents).values([
+        { sessionId: sess.id, eventType: "environment_ready", payload: { seeded: true }, createdAt: startedAt },
+        { sessionId: sess.id, eventType: "attack_started", payload: { technique: scenario.name }, createdAt: addMinutes(startedAt, 1) },
+      ]);
+    }
+  }
+}
+
+async function seedCertifications(userId: number, ids: string[]): Promise<void> {
+  for (const certificationId of ids) {
+    const existing = await db.query.userCertifications.findFirst({
+      where: and(
+        eq(userCertifications.userId, userId),
+        eq(userCertifications.certificationId, certificationId),
+      ),
+    });
+    if (existing) continue;
+    await db.insert(userCertifications).values({
+      userId,
+      certificationId,
+      earnedAt: subDays(new Date(), between(3, 40)),
+    });
+  }
+}
+
+async function main(): Promise<void> {
+  const scenarioRows = (await db
+    .select({
+      id: scenarios.id,
+      category: scenarios.category,
+      difficulty: scenarios.difficulty,
+      name: scenarios.name,
+    })
+    .from(scenarios)
+    .limit(30)) as Scenario[];
+  if (scenarioRows.length === 0) {
+    throw new Error("No scenarios found. Run `npm run db:seed` first.");
   }
 
-  const appStatuses = ["applied", "reviewing", "interview", "offered", "rejected"] as const;
-  for (let a = 0; a < 12; a += 1) {
-    const jobId = jobIds[a % jobIds.length]!;
-    const applicant = userIds[(a + 3) % userIds.length]!;
-    const dup = await db.query.jobApplications.findFirst({
-      where: and(eq(jobApplications.jobId, jobId), eq(jobApplications.userId, applicant)),
-    });
-    if (dup) continue;
-    await db.insert(jobApplications).values({
-      jobId,
-      userId: applicant,
-      matchScore: 55 + (a % 41),
-      status: appStatuses[a % appStatuses.length],
-    });
+  const passwordHash = await bcrypt.hash(PASSWORD, ROUNDS);
+
+  // Resolve the organizations created by the base seed.
+  const acme = await db.query.organizations.findFirst({ where: eq(organizations.slug, "acme-corp") });
+  const uni = await db.query.organizations.findFirst({ where: eq(organizations.slug, "state-university") });
+  if (!acme || !uni) {
+    throw new Error("Expected 'acme-corp' and 'state-university' orgs. Run `npm run db:seed` first.");
   }
 
-  console.log("Enhanced seed completed. Try admin@sentinelforge.com / demo123 (or existing admin password if unchanged).");
+  // Advertised demo accounts (created by base seed; upsert to be safe).
+  const studentId = await upsertUser({
+    email: "student1@state.edu",
+    name: "Alex Chen",
+    role: "student",
+    organizationId: uni.id,
+    passwordHash,
+  });
+  await upsertUser({
+    email: "enterprise.admin@acme.com",
+    name: "Acme Enterprise Admin",
+    role: "enterprise_admin",
+    organizationId: acme.id,
+    passwordHash,
+  });
+
+  // Peer students so enterprise/analytics/admin dashboards are populated.
+  const acmePeers = [
+    "Taylor Morgan", "Riley Brooks", "Jordan Ellis", "Priya Nair",
+    "Marcus Webb", "Dana Cole", "Sofia Reyes",
+  ];
+  const uniPeers = [
+    "Jamie Patel", "Noah Kim", "Ava Torres", "Liam Osei",
+    "Maya Sen", "Ethan Ford",
+  ];
+
+  const acmeStudentIds: number[] = [];
+  for (let i = 0; i < acmePeers.length; i += 1) {
+    const id = await upsertUser({
+      email: `acme.analyst${i + 1}@acme.demo`,
+      name: acmePeers[i]!,
+      role: "student",
+      organizationId: acme.id,
+      passwordHash,
+    });
+    acmeStudentIds.push(id);
+  }
+
+  const uniStudentIds: number[] = [studentId];
+  for (let i = 0; i < uniPeers.length; i += 1) {
+    const id = await upsertUser({
+      email: `su.student${i + 1}@state.demo`,
+      name: uniPeers[i]!,
+      role: "student",
+      organizationId: uni.id,
+      passwordHash,
+    });
+    uniStudentIds.push(id);
+  }
+
+  const acmeScenarios = scenarioRows;
+  const uniScenarios = scenarioRows;
+
+  // Headline student: rich, high-performing profile.
+  await seedSkillsForUser(studentId, 82);
+  await seedSessionsForUser(studentId, uni.id, uniScenarios, { completed: 12, withMentor: true });
+  await seedCertifications(studentId, ["soc_analyst_1", "incident_responder", "threat_hunter"]);
+
+  // Acme cohort.
+  for (let i = 0; i < acmeStudentIds.length; i += 1) {
+    const uid = acmeStudentIds[i]!;
+    await seedSkillsForUser(uid, between(58, 88));
+    await seedSessionsForUser(uid, acme.id, acmeScenarios, {
+      completed: between(4, 9),
+      withMentor: i < 2,
+    });
+    if (i < 3) await seedCertifications(uid, ["soc_analyst_1"]);
+  }
+
+  // State University cohort (excluding the headline student already handled).
+  for (let i = 1; i < uniStudentIds.length; i += 1) {
+    const uid = uniStudentIds[i]!;
+    await seedSkillsForUser(uid, between(55, 82));
+    await seedSessionsForUser(uid, uni.id, uniScenarios, {
+      completed: between(3, 8),
+      withMentor: i === 1,
+    });
+    if (i < 2) await seedCertifications(uid, ["soc_analyst_1"]);
+  }
+
+  // Hiring matches — applications from students to Acme's open roles.
+  const acmeJobs = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(eq(jobs.organizationId, acme.id));
+
+  if (acmeJobs.length > 0) {
+    const applicants = [studentId, ...acmeStudentIds, ...uniStudentIds.slice(1)];
+    const statuses = ["applied", "reviewing", "interview", "offered", "rejected"] as const;
+    let s = 0;
+    for (let a = 0; a < applicants.length; a += 1) {
+      const job = acmeJobs[a % acmeJobs.length]!;
+      const applicant = applicants[a]!;
+      const dup = await db.query.jobApplications.findFirst({
+        where: and(eq(jobApplications.jobId, job.id), eq(jobApplications.userId, applicant)),
+      });
+      if (dup) continue;
+      await db.insert(jobApplications).values({
+        jobId: job.id,
+        userId: applicant,
+        matchScore: between(58, 96),
+        status: statuses[s % statuses.length]!,
+        appliedAt: subDays(new Date(), between(1, 30)),
+      });
+      s += 1;
+    }
+  }
+
+  console.log(
+    [
+      "Enhanced seed completed.",
+      "Demo logins (password: password123):",
+      "  student1@state.edu          — Student (populated progress, sessions, certs)",
+      "  enterprise.admin@acme.com   — Enterprise admin (org analytics + hiring)",
+      "  admin@sentinelforge.com     — Platform admin",
+    ].join("\n"),
+  );
 }
 
 main()

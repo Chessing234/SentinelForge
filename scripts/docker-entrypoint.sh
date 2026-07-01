@@ -8,5 +8,9 @@ export NODE_ENV=production
 echo "==> Applying database migrations"
 node_modules/.bin/tsx src/db/migrate.ts
 
+# Populate demo data on first boot (idempotent; never blocks startup).
+echo "==> Ensuring demo data is seeded"
+node_modules/.bin/tsx scripts/seed-if-needed.ts || echo "==> Seed guard reported an issue; continuing startup"
+
 echo "==> Starting SentinelForge (Next.js + Socket.IO)"
 exec node_modules/.bin/tsx server.ts
