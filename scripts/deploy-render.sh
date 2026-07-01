@@ -56,22 +56,34 @@ cmd_deploy() {
 }
 
 cmd_seed() {
-  echo "==> Running db:seed via Render one-off job"
+  if [[ -n "${SEED_SECRET:-}" ]]; then
+    echo "==> Remote seed via HTTP API"
+    chmod +x "$ROOT/scripts/seed-remote.sh"
+    APP_URL="${APP_URL}" SEED_SECRET="${SEED_SECRET}" "$ROOT/scripts/seed-remote.sh" remote
+    return $?
+  fi
+
+  echo "==> Trying Render one-off job..."
   if render jobs create "${SERVICE_ID}" \
     --start-command "npm run db:seed" \
     --confirm -o text 2>/dev/null; then
-    echo "==> Running db:seed:enhanced"
     render jobs create "${SERVICE_ID}" \
       --start-command "npm run db:seed:enhanced" \
       --confirm -o text 2>/dev/null || true
-    echo "==> Seed jobs submitted. Watch: render jobs list ${SERVICE_ID}"
     return 0
   fi
+
   echo ""
-  echo "One-off jobs require a paid Render plan on free tiers."
-  echo "Seed manually via SSH (interactive):"
-  echo "  render ssh ${SERVICE_ID}"
-  echo "  npm run db:seed && npm run db:seed:enhanced"
+  echo "SSH and one-off jobs unavailable on Render free tier."
+  echo ""
+  echo "Use remote seed instead:"
+  echo "  1. Render Dashboard → ${SERVICE_NAME} → Environment"
+  echo "     Add SEED_SECRET=$(openssl rand -hex 16)"
+  echo "  2. Wait for redeploy, then:"
+  echo "     SEED_SECRET=that-value ./scripts/seed-remote.sh"
+  echo ""
+  echo "Or seed from your laptop (Render Postgres → Connections → External URL):"
+  echo "  DATABASE_URL='postgresql://...' ./scripts/seed-remote.sh --local"
   return 1
 }
 

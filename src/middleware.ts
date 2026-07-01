@@ -143,6 +143,7 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     pathname.startsWith("/api/auth") ||
     pathname === "/api/health" ||
     pathname === "/api/register" ||
+    pathname === "/api/admin/seed" ||
     pathname.startsWith("/api/slack/oauth") ||
     pathname.startsWith("/api/slack/events") ||
     pathname.startsWith("/api/slack/commands") ||
