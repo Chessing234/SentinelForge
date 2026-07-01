@@ -51,9 +51,26 @@ function clientIp(request: NextRequest): string {
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const startedAt = Date.now();
   const requestId = globalThis.crypto.randomUUID();
+
+  // Over HTTPS, Auth.js stores the session JWT under the `__Secure-`-prefixed
+  // cookie and salts the token with that name. The env-derived URL that Auth.js
+  // uses to auto-detect secure cookies isn't reliably visible in the Edge
+  // middleware context, so we determine it explicitly here — otherwise
+  // `getToken` reads the wrong cookie name, finds nothing, and bounces every
+  // logged-in user back to /login.
+  const secureCookie =
+    process.env.NODE_ENV === "production" ||
+    request.headers.get("x-forwarded-proto") === "https" ||
+    request.nextUrl.protocol === "https:";
+  const cookieName = secureCookie
+    ? "__Secure-authjs.session-token"
+    : "authjs.session-token";
   const token = await getToken({
     req: request,
     secret: process.env.AUTH_SECRET,
+    secureCookie,
+    cookieName,
+    salt: cookieName,
   });
 
   const isLoggedIn = Boolean(token?.sub);
